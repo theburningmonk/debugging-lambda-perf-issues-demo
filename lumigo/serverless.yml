@@ -1,0 +1,188 @@
+service: debug-perf-issues-lumigo-demo
+
+custom:
+  stage: ${opt:stage, self:provider.stage}
+  logLevel:
+    prod: INFO
+    default: DEBUG
+  serverless-iam-roles-per-function:
+    defaultInherit: true
+  busName: order_lumigo_events_${self:provider.stage}
+  lumigo:
+    token: ${env:LUMIGO_TOKEN}
+
+provider:
+  name: aws
+  runtime: nodejs12.x
+  environment:
+    LUMIGO_SECRET_MASKING_REGEX: "[]"
+    LUMIGO_TIMEOUT_TIMER_ENABLED: "TRUE"
+    LOG_LEVEL: ${self:custom.logLevel.${self:custom.stage}, self:custom.logLevel.default}
+    AWS_NODEJS_CONNECTION_REUSE_ENABLED: 1
+    serviceName: ${self:service}
+    stage: ${self:provider.stage}
+  
+functions:
+  get-index:
+    handler: functions/get-index.handler
+    environment:
+      restaurants_api:
+        Fn::Join:
+          - ""
+          - - https://
+            - !Ref ApiGatewayRestApi
+            - .execute-api.${self:provider.region}.amazonaws.com/${self:provider.stage}/restaurants
+      orders_api:
+        Fn::Join:
+          - ""
+          - - https://
+            - !Ref ApiGatewayRestApi
+            - .execute-api.${self:provider.region}.amazonaws.com/${self:provider.stage}/orders
+    events:
+      - http:
+          path: /
+          method: get
+    iamRoleStatements:
+      - Effect: Allow
+        Action: execute-api:Invoke
+        Resource: arn:aws:execute-api:#{AWS::Region}:#{AWS::AccountId}:#{ApiGatewayRestApi}/${self:provider.stage}/GET/restaurants
+
+  get-restaurants:
+    handler: functions/get-restaurants.handler
+    events:
+      - http:
+          path: /restaurants
+          method: get
+          authorizer: aws_iam
+    environment:
+      restaurants_table: !Ref RestaurantsTable
+    iamRoleStatements:
+      - Effect: Allow
+        Action: dynamodb:scan
+        Resource: !GetAtt RestaurantsTable.Arn
+      - Effect: Allow
+        Action: ssm:GetParameters*
+        Resource: arn:aws:ssm:#{AWS::Region}:#{AWS::AccountId}:parameter/${self:service}/${self:provider.stage}/get-restaurants/config
+
+  search-restaurants:
+    handler: functions/search-restaurants.handler
+    events:
+      - http:
+          path: /restaurants/search
+          method: post
+    environment:
+      restaurants_table: !Ref RestaurantsTable
+    iamRoleStatements:
+      - Effect: Allow
+        Action: dynamodb:scan
+        Resource: !GetAtt RestaurantsTable.Arn
+      - Effect: Allow
+        Action: ssm:GetParameters*
+        Resource: arn:aws:ssm:#{AWS::Region}:#{AWS::AccountId}:parameter/${self:service}/${self:provider.stage}/search-restaurants/config
+
+  place-order:
+    handler: functions/place-order.handler
+    events:
+      - http:
+          path: /orders
+          method: post
+    environment:
+      bus_name: !Ref EventBus
+    iamRoleStatements:
+      - Effect: Allow
+        Action: events:PutEvents
+        Resource: "*"
+
+  notify-restaurant:
+    handler: functions/notify-restaurant.handler
+    events:
+      - eventBridge:
+          eventBus: arn:aws:events:#{AWS::Region}:#{AWS::AccountId}:event-bus/${self:custom.busName}
+          pattern:
+            source:
+              - big-mouth
+            detail-type:
+              - order_placed
+    environment:
+      bus_name: !Ref EventBus
+      restaurant_notification_topic: !Ref RestaurantNotificationTopic
+    iamRoleStatements:
+      - Effect: Allow
+        Action: events:PutEvents
+        Resource: "*"
+      - Effect: Allow
+        Action: sns:Publish
+        Resource: !Ref RestaurantNotificationTopic
+
+  seed-restaurants:
+    handler: functions/seed-restaurants.handler
+    environment:
+      restaurants_table: !Ref RestaurantsTable
+    iamRoleStatements:
+      - Effect: Allow
+        Action: dynamodb:BatchWriteItem
+        Resource: !GetAtt RestaurantsTable.Arn
+
+resources:
+  Transform: AWS::Serverless-2016-10-31
+  Resources:
+    RestaurantsTable:
+      Type: AWS::DynamoDB::Table
+      Properties:
+        BillingMode: PAY_PER_REQUEST
+        AttributeDefinitions:
+          - AttributeName: name
+            AttributeType: S
+        KeySchema:
+          - AttributeName: name
+            KeyType: HASH
+
+    EventBus:
+      Type: AWS::Events::EventBus
+      Properties:
+        Name: ${self:custom.busName}
+
+    RestaurantNotificationTopic:
+      Type: AWS::SNS::Topic
+
+    GetRestaurantsConfigParameter:
+      Type: AWS::SSM::Parameter
+      Properties:
+        Type: String
+        Name: /${self:service}/${self:provider.stage}/get-restaurants/config
+        Value: '{
+          "defaultResults": 8
+        }'
+
+    SearchRestaurantsConfigParameter:
+      Type: AWS::SSM::Parameter
+      Properties:
+        Type: String
+        Name: /${self:service}/${self:provider.stage}/search-restaurants/config
+        Value: '{
+          "defaultResults": 8
+        }'
+
+    LambdaInvocationCustomResource:
+      Type: AWS::Serverless::Application
+      Properties:
+        Location:
+          ApplicationId: arn:aws:serverlessrepo:us-east-1:374852340823:applications/lambda-invocation-cfn-custom-resource
+          SemanticVersion: 1.4.0
+
+    # custom resource to invoke the seed-restaurants function during deployment
+    InvokeSeedRestaurants:
+      Type: Custom::LambdaInvocation
+      DependsOn:
+        - SeedDashrestaurantsLambdaFunction
+        - LambdaInvocationCustomResource
+      Properties:
+        ServiceToken: !GetAtt LambdaInvocationCustomResource.Outputs.FunctionArn
+        FunctionName: !Ref SeedDashrestaurantsLambdaFunction
+        Payload: {}
+        When: Create
+
+plugins:
+  - serverless-pseudo-parameters
+  - serverless-iam-roles-per-function
+  - serverless-lumigo
