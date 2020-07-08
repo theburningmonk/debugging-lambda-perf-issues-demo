@@ -4,7 +4,7 @@ custom:
   stage: ${opt:stage, self:provider.stage}
   logLevel:
     prod: INFO
-    default: INFO
+    default: DEBUG
   serverless-iam-roles-per-function:
     defaultInherit: true
   busName: order_emf_events_${self:provider.stage}
