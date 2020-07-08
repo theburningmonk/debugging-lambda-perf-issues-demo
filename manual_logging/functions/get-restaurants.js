@@ -18,10 +18,12 @@ const getRestaurants = async (count) => {
     Limit: count
   }
 
+  console.time('latency:DynamoDB.scan')
   const resp = await dynamodb.scan(req).promise()
   Log.debug('found restaurants', {
     count: resp.Items.length
   })
+  console.timeEnd('latency:DynamoDB.scan')
   return resp.Items
 }
 

@@ -12,7 +12,10 @@ module.exports.handler = wrap(async (event) => {
     Message: JSON.stringify(order),
     TopicArn: topicArn
   };
+
+  console.time('latency:SNS.publish')
   await sns.publish(snsReq).promise()
+  console.timeEnd('latency:SNS.publish')
 
   const { restaurantName, orderId } = order
   Log.debug(`notified restaurant of new order`, {
@@ -20,6 +23,7 @@ module.exports.handler = wrap(async (event) => {
     orderId
   })
 
+  console.time('latency:EventBridge.putEvents')
   await eventBridge.putEvents({
     Entries: [{
       Source: 'big-mouth',
@@ -28,6 +32,7 @@ module.exports.handler = wrap(async (event) => {
       EventBusName: busName
     }]
   }).promise()
+  console.timeEnd('latency:EventBridge.putEvents')
 
   Log.debug(`published event into EventBridge`, {
     eventType: 'restaurant_notified',

@@ -20,7 +20,10 @@ const findRestaurantsByTheme = async (theme, count) => {
     ExpressionAttributeValues: { ":theme": theme }
   }
 
+  console.time('latency:DynamoDB.scan')
   const resp = await dynamodb.scan(req).promise()
+  console.timeEnd('latency:DynamoDB.scan')
+
   Log.debug('found restaurants', {
     count: resp.Items.length
   })

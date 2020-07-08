@@ -25,10 +25,12 @@ const getRestaurants = async () => {
 
   aws4.sign(opts)
 
-  const httpReq = http.get(restaurantsApiRoot, {
+  console.time('latency:HTTP.getRestaurants')
+  const httpResp = await http.get(restaurantsApiRoot, {
     headers: Object.assign({}, opts.headers, CorrelationIds.get())
   })
-  return (await httpReq).data
+  console.timeEnd('latency:HTTP.getRestaurants')
+  return httpResp.data
 }
 
 module.exports.handler = wrap(async (event, context) => {

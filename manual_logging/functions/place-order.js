@@ -11,6 +11,7 @@ module.exports.handler = wrap(async (event) => {
   const orderId = chance.guid()
   Log.debug('placing order...', { orderId, restaurantName })
 
+  console.time('latency:EventBridge.putEvents')
   await eventBridge.putEvents({
     Entries: [{
       Source: 'big-mouth',
@@ -22,6 +23,7 @@ module.exports.handler = wrap(async (event) => {
       EventBusName: busName
     }]
   }).promise()
+  console.timeEnd('latency:EventBridge.putEvents')
 
   Log.debug(`published event into EventBridge`, {
     eventType: 'order_placed',
