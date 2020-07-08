@@ -3,6 +3,7 @@ const dynamodb = new DocumentClient()
 const { ssm } = require('middy/middlewares')
 const Log = require('@dazn/lambda-powertools-logger')
 const wrap = require('@dazn/lambda-powertools-pattern-basic')
+const { measure } = require('../lib/latency')
 
 const { serviceName, stage } = process.env
 
@@ -18,12 +19,13 @@ const getRestaurants = async (count) => {
     Limit: count
   }
 
-  console.time('latency:DynamoDB.scan')
-  const resp = await dynamodb.scan(req).promise()
+  const resp = await measure(
+    'DynamoDB.scan',
+    () => dynamodb.scan(req).promise()
+  )
   Log.debug('found restaurants', {
     count: resp.Items.length
   })
-  console.timeEnd('latency:DynamoDB.scan')
   return resp.Items
 }
 

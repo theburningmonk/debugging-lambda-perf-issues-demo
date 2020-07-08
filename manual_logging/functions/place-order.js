@@ -2,6 +2,7 @@ const eventBridge = require('@dazn/lambda-powertools-eventbridge-client')
 const chance = require('chance').Chance()
 const Log = require('@dazn/lambda-powertools-logger')
 const wrap = require('@dazn/lambda-powertools-pattern-basic')
+const { measure } = require('../lib/latency')
 
 const busName = process.env.bus_name
 
@@ -11,19 +12,20 @@ module.exports.handler = wrap(async (event) => {
   const orderId = chance.guid()
   Log.debug('placing order...', { orderId, restaurantName })
 
-  console.time('latency:EventBridge.putEvents')
-  await eventBridge.putEvents({
-    Entries: [{
-      Source: 'big-mouth',
-      DetailType: 'order_placed',
-      Detail: JSON.stringify({
-        orderId,
-        restaurantName,
-      }),
-      EventBusName: busName
-    }]
-  }).promise()
-  console.timeEnd('latency:EventBridge.putEvents')
+  await measure(
+    'EventBridge.putEvents',
+    () => eventBridge.putEvents({
+      Entries: [{
+        Source: 'big-mouth',
+        DetailType: 'order_placed',
+        Detail: JSON.stringify({
+          orderId,
+          restaurantName,
+        }),
+        EventBusName: busName
+      }]
+    }).promise()
+  )
 
   Log.debug(`published event into EventBridge`, {
     eventType: 'order_placed',

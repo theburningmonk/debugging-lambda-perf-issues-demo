@@ -2,6 +2,7 @@ const eventBridge = require('@dazn/lambda-powertools-eventbridge-client')
 const sns = require('@dazn/lambda-powertools-sns-client')
 const Log = require('@dazn/lambda-powertools-logger')
 const wrap = require('@dazn/lambda-powertools-pattern-basic')
+const { measure } = require('../lib/latency')
 
 const busName = process.env.bus_name
 const topicArn = process.env.restaurant_notification_topic
@@ -13,9 +14,10 @@ module.exports.handler = wrap(async (event) => {
     TopicArn: topicArn
   };
 
-  console.time('latency:SNS.publish')
-  await sns.publish(snsReq).promise()
-  console.timeEnd('latency:SNS.publish')
+  await measure(
+    'SNS.publish',
+    () => sns.publish(snsReq).promise()
+  )
 
   const { restaurantName, orderId } = order
   Log.debug(`notified restaurant of new order`, {
@@ -23,16 +25,17 @@ module.exports.handler = wrap(async (event) => {
     orderId
   })
 
-  console.time('latency:EventBridge.putEvents')
-  await eventBridge.putEvents({
-    Entries: [{
-      Source: 'big-mouth',
-      DetailType: 'restaurant_notified',
-      Detail: JSON.stringify(order),
-      EventBusName: busName
-    }]
-  }).promise()
-  console.timeEnd('latency:EventBridge.putEvents')
+  await measure(
+    'EventBridge.putEvents',
+    () => eventBridge.putEvents({
+      Entries: [{
+        Source: 'big-mouth',
+        DetailType: 'restaurant_notified',
+        Detail: JSON.stringify(order),
+        EventBusName: busName
+      }]
+    }).promise()
+  )
 
   Log.debug(`published event into EventBridge`, {
     eventType: 'restaurant_notified',

@@ -6,6 +6,7 @@ const URL = require('url')
 const Log = require('@dazn/lambda-powertools-logger')
 const wrap = require('@dazn/lambda-powertools-pattern-basic')
 const CorrelationIds = require('@dazn/lambda-powertools-correlation-ids')
+const { measure } = require('../lib/latency')
 
 const restaurantsApiRoot = process.env.restaurants_api
 const ordersApiRoot = process.env.orders_api
@@ -25,11 +26,12 @@ const getRestaurants = async () => {
 
   aws4.sign(opts)
 
-  console.time('latency:HTTP.getRestaurants')
-  const httpResp = await http.get(restaurantsApiRoot, {
-    headers: Object.assign({}, opts.headers, CorrelationIds.get())
-  })
-  console.timeEnd('latency:HTTP.getRestaurants')
+  const httpResp = await measure(
+    'HTTP.getRestaurants',
+    () => http.get(restaurantsApiRoot, {
+      headers: Object.assign({}, opts.headers, CorrelationIds.get())
+    })
+  )
   return httpResp.data
 }
 
