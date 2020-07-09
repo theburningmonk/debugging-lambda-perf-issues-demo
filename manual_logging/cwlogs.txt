@@ -1,5 +1,5 @@
 fields @timestamp
 | sort @timestamp desc
-| filter @message like "latency:"
 | parse @log /^.*\/aws\/lambda\/(?<functionName>.*)/
-| parse @message /.*latency:(?<actionName>.*): (?<latency>.*)ms/
+| parse @message /.*latency:(?<actionName>.*) (?<latency>\d*)/
+| filter latency > 0
